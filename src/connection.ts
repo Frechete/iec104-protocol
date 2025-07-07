@@ -113,14 +113,14 @@ export function connection(Lib60870) {
 
                 socket.on('data', function (data) {
                     if (!Lib60870.prototype?.quiet) {
-                        console.log('data from: ' + ($this as any).hostname)
+                        console.log('IEC104 data from: ' + ($this as any).hostname)
                     }
                     $this.checkMessage(data, data.length)
                 })
 
                 socket.on('timeout', function (data) {
                     if (!Lib60870.prototype?.quiet) {
-                        console.log('Timeout: ',($this as any).hostname, ' ', data.toString())
+                        console.log('IEC104 Timeout: ',($this as any).hostname, ' ', data.toString())
                     }
                     $this.running = false;
                     ($this as any).socketError = true
