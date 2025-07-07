@@ -26,7 +26,8 @@
     "ts": "node --es-module-specifier-resolution=node --loader ts-node/esm",
     "test": "npx mocha -n loader=ts-node/esm -n experimental-specifier-resolution=node --config .mocharc.json \"src/**/*.test.ts\" --",
     "test:grep": "npm run test -- --grep",
-    "install:hook": "npx husky install"
+    "install:hook": "npx husky install",
+    "prepare": "npm run build"
   },
   "engines": {
     "node": ">=16.13"
