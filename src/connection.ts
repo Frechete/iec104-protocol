@@ -229,9 +229,47 @@ export function connection(Lib60870) {
                     if ((this as any).fileClient != null) {
                         messageHandled = (this as any).fileClient.HandleFileAsdu(asdu)
                     }
-                    if (messageHandled == false) {
-                        if (this.asduReceivedHandler != null) {
+                
+                    if (!messageHandled && this.asduReceivedHandler != null) {
+                        try {
                             (this as any).asduReceivedHandler(this.asduReceivedHandlerParameter, asdu)
+                        } catch (handlerError) {
+                            this.DebugLog(`ASDU handler error: ${handlerError}`)
+                
+                            // --- Manual fallback for Type ID 5 (M_ST_NA_1) ---
+                            const TYPE_ID_POS = 6
+                            const TYPE_5 = 0x05
+                
+                            if (buffer[TYPE_ID_POS] === TYPE_5) {
+                                this.DebugLog('Handling fallback M_ST_NA_1 (Type 5) manually')
+                
+                                const elements = []
+                                let pos = 8  // Start parsing after Type, VSQ, COT, CA (6,7,8,9,10)
+                                const cot = buffer[7]
+                                const ca = buffer.readUInt16LE(9)
+                
+                                while (pos + 4 <= msgSize) {
+                                    const ioa = buffer.readUIntLE(pos, 3); pos += 3
+                                    const val = buffer[pos++]
+                                    const qds = buffer[pos++]
+                
+                                    elements.push({
+                                        IOA: ioa,
+                                        value: val,
+                                        QDS: qds
+                                    })
+                                }
+                
+                                const simplifiedAsdu = {
+                                    type: TYPE_5,
+                                    elements,
+                                    causeOfTransmission: cot,
+                                    commonAddress: ca
+                                }
+                
+                                // Forward to handler
+                                (this as any).asduReceivedHandler(this.asduReceivedHandlerParameter, simplifiedAsdu)
+                            }
                         }
                     }
                 } catch (error) {
