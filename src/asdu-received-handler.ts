@@ -164,9 +164,91 @@ export function asduReceivedHandler(Lib60870) {
                 //console.warn(val);
             }
             parameter.onRecievedData(rets)
-        } else {
+        } 
+       // Add handler for M_DP_NA_1 (Double Point Information) - Type 3
+       else if (asdu.typeId == Lib60870.prototype.TypeID.M_DP_NA_1) {
+           const rets: Data[] = []
+           for (let i = 0; i < asdu.NumberOfElements; i++) {
+               emit = true
+               const val = asdu.GetElement(i)
+               if (val.ObjectAddress > 0) {
+                   Lib60870.prototype.informationObjects[val.ObjectAddress] = 
+                       new Lib60870.prototype.InformationObjectNormalized(
+                           val.ObjectAddress, 
+                           val.Value, 
+                           'M_DP_NA_1', 
+                           'DoublePointInformation',
+                           null,
+                           val.Quality
+                       )
+
+                   const jsonObject: Data = {
+                       IOA: val.ObjectAddress,
+                       DoublePointInformation: val.Value,
+                       Quality: val.Quality.ToString()
+                   }
+                   rets.push(jsonObject)
+               }
+           }
+           parameter.onRecievedData(rets)
+       }
+       // Add handler for M_ST_NA_1 (Step Position Information) - Type 5
+       else if (asdu.typeId == Lib60870.prototype.TypeID.M_ST_NA_1) {
+           const rets: Data[] = []
+           for (let i = 0; i < asdu.NumberOfElements; i++) {
+               emit = true
+               const val = asdu.GetElement(i)
+               if (val.ObjectAddress > 0) {
+                   Lib60870.prototype.informationObjects[val.ObjectAddress] = 
+                       new Lib60870.prototype.InformationObjectNormalized(
+                           val.ObjectAddress, 
+                           val.Value, 
+                           'M_ST_NA_1', 
+                           'StepPosition',
+                           null,
+                           val.Quality
+                       )
+
+                   const jsonObject: Data = {
+                       IOA: val.ObjectAddress,
+                       StepPosition: val.Value,
+                       Quality: val.Quality.ToString()
+                   }
+                   rets.push(jsonObject)
+               }
+           }
+           parameter.onRecievedData(rets)
+       }
+       // Add handler for M_ME_NA_1 (Measured Value Normalized) - Type 9
+       else if (asdu.typeId == Lib60870.prototype.TypeID.M_ME_NA_1) {
+           const rets: Data[] = []
+           for (let i = 0; i < asdu.NumberOfElements; i++) {
+               emit = true
+               const val = asdu.GetElement(i)
+               if (val.ObjectAddress > 0) {
+                   Lib60870.prototype.informationObjects[val.ObjectAddress] = 
+                       new Lib60870.prototype.InformationObjectNormalized(
+                           val.ObjectAddress, 
+                           val.Value, 
+                           'M_ME_NA_1', 
+                           'MeasuredValueNormalized',
+                           null,
+                           val.Quality
+                       )
+
+                   const jsonObject: Data = {
+                       IOA: val.ObjectAddress,
+                       MeasuredValueNormalized: val.Value,
+                       Quality: val.Quality.ToString()
+                   }
+                   rets.push(jsonObject)
+               }
+           }
+           parameter.onRecievedData(rets)
+       }
+        else {
             if(!Lib60870.prototype?.quiet) {
-                console.log('Unknown message type! (' + asdu.typeId + ')')
+                console.log('Lib60870 Unknown message type! (' + asdu.typeId + ')')
             }
         }
         if (emit && Object.keys(Lib60870.prototype.informationObjects).length > 0) {

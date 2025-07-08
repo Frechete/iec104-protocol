@@ -78,17 +78,20 @@ export const Lib = Lib60870
 
 export interface Data {
   IOA?: number,
-  MeasuredValueShort?: number,
   SinglePointInformation?: number,
-  Quality?: string,
-  MeasuredValueNormalizedWithoutQuality?: number,
   SinglePointWithCP24Time2a?: number,
-  SinglePointWithCP56Time2a?: number
-  Timestamp?: string,
+  SinglePointWithCP56Time2a?: number,
+  MeasuredValueShort?: number,
+  MeasuredValueNormalizedWithoutQuality?: number,
+  DoublePointInformation?: number,
+  StepPosition?: number,
+  MeasuredValueNormalized?: number,
   MeasuredValueScaled?: number,
-  SetpointCommandShort?: number,
   MeasuredValueScaledWithCP56Time2a?: number,
-  DoubleCommand?: string,
+  SetpointCommandShort?: number,
+  DoubleCommand?: any,
+  Quality?: string,
+  Timestamp?: string,
   val?: any
 }
 
@@ -125,5 +128,4 @@ export class Protocol {
   public connect() {
     this.connection.Connect()
   }
-
 }

@@ -174,7 +174,41 @@ export function helper(Lib60870) {
         STOPDT_CON_RECEIVED : 3,
         CONNECT_FAILED : 4
     }
+    Lib60870.prototype.SinglePointInformation = function(ioa, value, quality) {
+        this.ObjectAddress = ioa
+        this.Value         = value
+        this.Quality       = quality
+    }
 
+    Lib60870.prototype.DoublePointInformation = function(ioa, value, quality) {
+        this.ObjectAddress = ioa
+        this.Value         = value
+        this.Quality       = quality
+    }
+
+    Lib60870.prototype.StepPositionInformation = function(ioa, value, quality) {
+        this.ObjectAddress = ioa
+        this.Value         = value
+        this.Quality       = quality
+    }
+
+    Lib60870.prototype.MeasuredValueNormalized = function(ioa, value, quality) {
+        this.ObjectAddress = ioa
+        this.Value         = value
+        this.Quality       = quality
+    }
+
+    // ─── Quality Descriptor Helper ──────────────────────────────────
+    Lib60870.prototype.QualityDescriptor = function(qds) {
+        this.Overflow     = (qds & 0x01) !== 0
+        this.Blocked      = (qds & 0x10) !== 0
+        this.Substituted  = (qds & 0x20) !== 0
+        this.NonTopical   = (qds & 0x40) !== 0
+        this.Invalid      = (qds & 0x80) !== 0
+        this.ToString     = function() {
+            return `Quality(OV:${this.Overflow}, BL:${this.Blocked}, SB:${this.Substituted}, NT:${this.NonTopical}, IV:${this.Invalid})`
+        }
+    }
     Lib60870.prototype.ParseInformationObjectAddress = function(parameters, msg, startIndex) {
         if (msg.length - startIndex < parameters.SizeOfIOA) {
             throw new Lib60870.prototype.ASDUParsingException('Message to short')

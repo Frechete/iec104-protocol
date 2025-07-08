@@ -1,6 +1,6 @@
 {
   "name": "iec104-protocol",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "104 protocol common toolkit",
   "author": "wukz",
   "type": "module",
@@ -12,10 +12,10 @@
     }
   },
   "main": "./lib/index.js",
-  "homepage": "https://github.com/wukz959/iec104-protocol.git",
+  "homepage": "https://github.com/Frechete/iec104-protocol.git",
   "repository": {
     "type": "git",
-    "url": "https://github.com/wukz959/iec104-protocol.git"
+    "url": "https://github.com/Frechete/iec104-protocol.git"
   },
   "license": "MIT",
   "scripts": {
@@ -43,7 +43,7 @@
     "glob": "^10.2.5",
     "husky": "^8.0.3",
     "mocha": "^10.0.0",
-    "nodemon": "^2.0.20",
+    "nodemon": "^3.1.10",
     "power-assert": "^1.6.1",
     "rollup": "^3.22.0",
     "rollup-plugin-typescript2": "^0.34.1",

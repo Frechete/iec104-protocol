@@ -42,8 +42,6 @@ export function connection(Lib60870) {
         reconnectTCounter = 0
         quiet = false
 
-
-
         constructor(hostname, tcpPort) {
             this.STARTDT_ACT_MSG[0] = 0x68
             this.STARTDT_ACT_MSG[1] = 0x04
@@ -68,6 +66,9 @@ export function connection(Lib60870) {
             this.TESTFR_CON_MSG[0] = 0x68
             this.TESTFR_CON_MSG[1] = 0x04
             this.TESTFR_CON_MSG[2] = 0x83
+
+            this.receiveSequenceNumber = 0;
+            this.sendSequenceNumber = 0;
 
             this.Setup(hostname, tcpPort)
         }
@@ -104,10 +105,14 @@ export function connection(Lib60870) {
             return new Promise(function (resolve, reject) {
                 const socket = new net.Socket({ readable: true, writable: true, allowHalfOpen: false })
                 socket.connect(($this as any).tcpPort, ($this as any).hostname)
+
                 socket.on('error', function (data) {
                     if (!Lib60870.prototype?.quiet) {
                         console.error(data.toString())
                     }
+                    socket.destroy();
+                    $this.running = false;
+                    $this.connecting = false;
                     resolve(false)
                 })
 
@@ -120,7 +125,7 @@ export function connection(Lib60870) {
 
                 socket.on('timeout', function (data) {
                     if (!Lib60870.prototype?.quiet) {
-                        console.log('IEC104 Timeout: ',($this as any).hostname, ' ', data.toString())
+                        console.log('IEC104 Timeout: ', ($this as any).hostname, ' ', data.toString())
                     }
                     $this.running = false;
                     ($this as any).socketError = true
@@ -140,12 +145,13 @@ export function connection(Lib60870) {
                 socket.on('close', function (data) {
                     socket.end()
                     $this.running = false
+                    $this.connecting = false;
                     $this.Reconnect()
                 })
 
                 socket.on('end', function () {
                     if (!Lib60870.prototype?.quiet) {
-                        console.warn('Disconnected from server')
+                        console.warn('IEC104 Disconnected from server')
                     }
                 })
 
@@ -178,10 +184,6 @@ export function connection(Lib60870) {
                             console.warn($this.reconnectTCounter, reconnectTimeout)
                         }
                         $this.ResetConnection()
-                        //$this.oldestSentASDU = -1;
-                        //$this.newestSentASDU = -1;
-                        //$this.statistics.SentMsgCounter = 0;
-                        //$this.ResetT3Timeout(Lib60870.prototype.GetUInt64Value(new Date().valueOf()));
                         $this.Connect()
                     }
                 }, reconnectTimeout)
@@ -210,65 +212,35 @@ export function connection(Lib60870) {
                 }
                 const frameSendSequenceNumber = ((buffer[3] * 0x100) + (buffer[2] & 0xfe)) / 2
                 const frameRecvSequenceNumber = ((buffer[5] * 0x100) + (buffer[4] & 0xfe)) / 2
-                this.DebugLog('Received I frame: N(S) = ' + frameSendSequenceNumber + ' N(R) = ' + frameRecvSequenceNumber)
-                if (typeof this.receiveSequenceNumber == 'undefined') {
-                    this.receiveSequenceNumber = 1
-                }
+                this.DebugLog('Received I frame: N(S) = ' + frameSendSequenceNumber + ' N(R) = ' + frameRecvSequenceNumber + ' expected = ' + this.receiveSequenceNumber)
                 if (frameSendSequenceNumber != this.receiveSequenceNumber) {
-                    // this.DebugLog("Sequence error: Close connection!|" + frameSendSequenceNumber + "|" + this.receiveSequenceNumber);
-                    // return false;
+                    this.DebugLog("Sequence error: Close connection!|" + frameSendSequenceNumber + "|" + this.receiveSequenceNumber);
+                    return false;
                 }
                 if (this.CheckSequenceNumber(frameRecvSequenceNumber) == false) {
                     return false
                 }
                 this.receiveSequenceNumber = (this.receiveSequenceNumber + 1) % 32768
                 this.unconfirmedReceivedIMessages++
+                if (this.unconfirmedReceivedIMessages >= (this as any).apciParameters.W) {
+                    this.DebugLog(`IEC104 W threshold reached (${this.unconfirmedReceivedIMessages}), sending S-frame ACK.`);
+                    this.SendSMessage();
+                    // Reset the counter after sending the acknowledgment
+                    this.unconfirmedReceivedIMessages = 0;
+                }
                 try {
                     const asdu = new Lib60870.prototype.ASDU((this as any).alParameters, buffer, 6, msgSize)
                     let messageHandled = false
                     if ((this as any).fileClient != null) {
                         messageHandled = (this as any).fileClient.HandleFileAsdu(asdu)
                     }
-                
-                    if (!messageHandled && this.asduReceivedHandler != null) {
-                        try {
-                            (this as any).asduReceivedHandler(this.asduReceivedHandlerParameter, asdu)
-                        } catch (handlerError) {
-                            this.DebugLog(`ASDU handler error: ${handlerError}`)
-                
-                            // --- Manual fallback for Type ID 5 (M_ST_NA_1) ---
-                            const TYPE_ID_POS = 6
-                            const TYPE_5 = 0x05
-                
-                            if (buffer[TYPE_ID_POS] === TYPE_5) {
-                                this.DebugLog('Handling fallback M_ST_NA_1 (Type 5) manually')
-                
-                                const elements = []
-                                let pos = 8  // Start parsing after Type, VSQ, COT, CA (6,7,8,9,10)
-                                const cot = buffer[7]
-                                const ca = buffer.readUInt16LE(9)
-                
-                                while (pos + 4 <= msgSize) {
-                                    const ioa = buffer.readUIntLE(pos, 3); pos += 3
-                                    const val = buffer[pos++]
-                                    const qds = buffer[pos++]
-                
-                                    elements.push({
-                                        IOA: ioa,
-                                        value: val,
-                                        QDS: qds
-                                    })
-                                }
-                
-                                const simplifiedAsdu = {
-                                    type: TYPE_5,
-                                    elements,
-                                    causeOfTransmission: cot,
-                                    commonAddress: ca
-                                }
-                
-                                // Forward to handler
-                                (this as any).asduReceivedHandler(this.asduReceivedHandlerParameter, simplifiedAsdu)
+
+                    if (messageHandled == false) {
+                        if (this.asduReceivedHandler != null) {
+                            try {
+                                (this as any).asduReceivedHandler(this.asduReceivedHandlerParameter, asdu)
+                            } catch (handlerError) {
+                                this.DebugLog(`ASDU handler error: ${handlerError}`)
                             }
                         }
                     }
@@ -284,7 +256,7 @@ export function connection(Lib60870) {
                 }
             } else if ((buffer[2] & 0x03) == 0x03) {
                 (this as any).uMessageTimeout = 0
-                if (buffer[2] == 0x43) { // Check for TESTFR_ACT message
+                if (buffer[2] == 0x43) { 
                     this.statistics.RcvdTestFrActCounter++
                     this.DebugLog('RCVD TESTFR_ACT')
                     this.DebugLog('SEND TESTFR_CON')
@@ -296,7 +268,7 @@ export function connection(Lib60870) {
                 } else if (buffer[2] == 0x83) {
                     this.DebugLog('RCVD TESTFR_CON')
                     this.statistics.RcvdTestFrConCounter++
-                    (this as any).outStandingTestFRConMessages = 0
+                        (this as any).outStandingTestFRConMessages = 0
                 } else if (buffer[2] == 0x07) {
                     this.DebugLog('RCVD STARTDT_ACT')
                     this.socket.write(this.STARTDT_CON_MSG)
@@ -325,7 +297,6 @@ export function connection(Lib60870) {
 
         CheckSequenceNumber(seqNo) {
             if ((this as any).checkSequenceNumbers) {
-                //lock (this.sentASDUs) {
                 let seqNoIsValid = false
                 let counterOverflowDetected = false
                 let oldestValidSeqNo = -1
@@ -383,7 +354,6 @@ export function connection(Lib60870) {
                         }
                     } while (true)
                 }
-                //}
             }
             return true
         }
@@ -393,11 +363,20 @@ export function connection(Lib60870) {
         }
 
         Close() {
-            (this as any).client.destroy()
+            this.running = false;
+            this.connecting = false;
+
+            if (this.socket) {
+                this.socket.destroy();
+                this.socket = null;
+            }
+
+            clearTimeout(this.keepAliveTimer);
+            clearTimeout(this.reconnectTimer);
         }
 
         IsSentBufferFull() {
-            return false //todo not real function
+            return false 
         }
 
         SendTestCommand(ca) {
@@ -405,10 +384,9 @@ export function connection(Lib60870) {
             asdu.AddInformationObject(new Lib60870.prototype.TestCommand())
             this.DebugLog('SendTestCommand')
             this.SendASDUInternal(asdu)
-
         }
 
-        SendInterrogationCommand(cot, ca, qoi) { //Lib60870.prototype.CauseOfTransmission, int, byte
+        SendInterrogationCommand(cot, ca, qoi) { 
             const asdu = new Lib60870.prototype.ASDU((this as any).alParameters, cot, false, false, (this as any).alParameters.OA, ca, false)
             asdu.AddInformationObject(new Lib60870.prototype.InterrogationCommand(0, qoi))
             this.SendASDUInternal(asdu)
@@ -422,16 +400,10 @@ export function connection(Lib60870) {
         }
 
         SendASDUInternal(asdu) {
-            //console.log(this.running, this.useSendMessageQueue, this.IsSentBufferFull());
-            //lock (socket) {
             if (this.running == false) {
                 return
-                //throw new Lib60870.prototype.ConnectionException("not connected", "SocketException"); //new SocketException(10057));
             }
             if (this.useSendMessageQueue) {
-                //lock (waitingToBeSent) {
-                //    waitingToBeSent.Enqueue(asdu);
-                //}
                 (this as any).SendNextWaitingASDU()
             } else {
                 if (this.IsSentBufferFull()) {
@@ -439,7 +411,6 @@ export function connection(Lib60870) {
                 }
                 this.SendIMessageAndUpdateSentASDUs(asdu)
             }
-            //}
         }
 
         SendControlCommand(cot, ca, sc) {
@@ -458,12 +429,11 @@ export function connection(Lib60870) {
             this.connectionHandler = handler
             this.connectionHandlerParameter = parameter
         }
-
         SendSMessage() {
             const msg = new Uint8Array(6)
             msg[0] = 0x68
             msg[1] = 0x04
-            msg[2] = 0x07
+            msg[2] = 0x01
             msg[3] = 0
             msg[4] = Lib60870.prototype.GetByteValue(((this.receiveSequenceNumber % 128) * 2))
             msg[5] = Lib60870.prototype.GetByteValue((this.receiveSequenceNumber / 128))
@@ -479,7 +449,6 @@ export function connection(Lib60870) {
             asdu.Encode(frame, (this as any).alParameters)
             const buffer = frame.GetBuffer()
             const msgSize = frame.GetMsgSize()
-            //console.warn(this.sendSequenceNumber, ((this.sendSequenceNumber % 128) * 2));
             buffer[0] = 0x68
             buffer[1] = Lib60870.prototype.GetByteValue((msgSize - 2))
             buffer[2] = Lib60870.prototype.GetByteValue(((this.sendSequenceNumber % 128) * 2))
@@ -500,13 +469,12 @@ export function connection(Lib60870) {
                 if (this.lastException != null) {
                     throw new Lib60870.prototype.ConnectionException(this.lastException.Message, this.lastException)
                 } else {
-                    throw new Lib60870.prototype.ConnectionException('not connected', 'SocketException') //new SocketException(10057));
+                    throw new Lib60870.prototype.ConnectionException('not connected', 'SocketException')
                 }
             }
         }
 
         SendIMessageAndUpdateSentASDUs(asdu) {
-            //lock (this.sentASDUs) {
             let currentIndex = 0
             if (this.oldestSentASDU == -1) {
                 this.oldestSentASDU = 0
@@ -518,11 +486,9 @@ export function connection(Lib60870) {
             this.sentASDUs[currentIndex].seqNo = this.SendIMessage(asdu)
             this.sentASDUs[currentIndex].sentTime = new Date().valueOf()
             this.newestSentASDU = currentIndex
-            //console.warn(currentIndex, this.sentASDUs[currentIndex]);
             if (this.debugBuffer) {
                 this.PrintSendBuffer()
             }
-            //}
         }
 
         PrintSendBuffer() {
@@ -542,7 +508,6 @@ export function connection(Lib60870) {
         }
 
         DebugLog(message) {
-            // if (this.debugOutput) {
             if (!Lib60870.prototype?.quiet) {
                 console.log('CS104 MASTER CONNECTION ' + this.connectionID + ': ' + message)
             }
@@ -550,9 +515,8 @@ export function connection(Lib60870) {
 
         ResetConnection() {
             this.sendSequenceNumber = 0
-            this.receiveSequenceNumber = 0
+            this.receiveSequenceNumber = 0;
             this.unconfirmedReceivedIMessages = 0;
-            //this.lastConfirmationTime = System.Int64.MaxValue;
             (this as any).timeoutT2Triggered = false;
             (this as any).outStandingTestFRConMessages = 0;
             (this as any).uMessageTimeout = 0;
@@ -561,11 +525,12 @@ export function connection(Lib60870) {
             this.maxSentASDUs = (this as any).apciParameters.K
             this.oldestSentASDU = -1
             this.newestSentASDU = -1
-            delete this.receiveSequenceNumber
-            this.sentASDUs = [] //new Lib60870.prototype.SentASDU[Lib60870.prototype.maxSentASDUs];
+            this.sentASDUs = [] 
+
+            clearTimeout(this.keepAliveTimer);
+            clearTimeout(this.reconnectTimer);
 
             if (this.useSendMessageQueue) {
-                //this.waitingToBeSent = new Lib60870.prototype.Queue<Lib60870.prototype.ASDU> ();
             }
             this.statistics.Reset()
         }
